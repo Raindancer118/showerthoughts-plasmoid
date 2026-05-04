@@ -10,14 +10,17 @@ PlasmoidItem {
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
     // ── State ──────────────────────────────────────────────────────────────
-    property var    posts:        []    // all fetched posts
-    property var    seenIds:      ({})  // {id: true} — never repeat within session
-    property var    cursors:      ({})  // {subreddit: afterCursor} for pagination
+    property var    posts:        []
+    property var    seenIds:      ({})
+    property var    cursors:      ({})
     property string currentTitle: ""
     property string currentMeta:  ""
     property string currentUrl:   ""
     property bool   isAnimating:  false
-    property double lastFetchMore: 0   // throttle background pagination
+    property double lastFetchMore: 0
+
+    // Signal that crosses the fullRepresentation component boundary
+    signal triggerNext()
 
     // ── Config helpers ─────────────────────────────────────────────────────
     property var subredditList: {
@@ -29,16 +32,16 @@ PlasmoidItem {
 
     // ── Fetching ───────────────────────────────────────────────────────────
     function fetchAllPosts() {
-        root.posts    = []
-        root.seenIds  = {}
-        root.cursors  = {}
+        root.posts         = []
+        root.seenIds       = {}
+        root.cursors       = {}
         root.lastFetchMore = 0
         subredditList.forEach(function(sub) { fetchSubreddit(sub, null) })
     }
 
     function fetchMore() {
         var now = Date.now()
-        if (now - root.lastFetchMore < 60000) return  // once per minute max
+        if (now - root.lastFetchMore < 60000) return
         root.lastFetchMore = now
         subredditList.forEach(function(sub) {
             if (root.cursors[sub]) fetchSubreddit(sub, root.cursors[sub])
@@ -59,16 +62,12 @@ PlasmoidItem {
                 return
             }
             try {
-                var listing = JSON.parse(xhr.responseText).data
-
-                // Save pagination cursor for next call
+                var listing  = JSON.parse(xhr.responseText).data
                 root.cursors[sub] = listing.after || null
 
                 var newPosts = listing.children
                     .filter(function(c) {
-                        return !c.data.stickied
-                            && c.data.title
-                            && c.data.title.length > 15
+                        return !c.data.stickied && c.data.title && c.data.title.length > 15
                     })
                     .map(function(c) {
                         return {
@@ -83,9 +82,7 @@ PlasmoidItem {
 
                 root.posts = root.posts.concat(newPosts)
 
-                if (root.currentTitle === "" && root.posts.length > 0) {
-                    root.advance()
-                }
+                if (root.currentTitle === "" && root.posts.length > 0) root.advance()
             } catch(e) {
                 console.log("ShowerthoughtsWidget: Parse error for r/" + sub + ": " + e)
             }
@@ -96,29 +93,20 @@ PlasmoidItem {
     // ── Navigation ─────────────────────────────────────────────────────────
     function advance() {
         var pool = root.posts.filter(function(p) { return !root.seenIds[p.id] })
-
-        // Running low — quietly fetch the next page in the background
         if (pool.length < 15) root.fetchMore()
+        if (pool.length === 0) { root.seenIds = {}; pool = root.posts }
 
-        // Fully exhausted — reset seen set and start over
-        if (pool.length === 0) {
-            root.seenIds = {}
-            pool = root.posts
-        }
-
-        var pick = pool[Math.floor(Math.random() * pool.length)]
+        var pick          = pool[Math.floor(Math.random() * pool.length)]
         root.seenIds[pick.id] = true
-        root.currentTitle     = pick.title
-        root.currentUrl       = pick.url
-        root.currentMeta      = "u/" + pick.author
-                                + "  ·  " + pick.subreddit
-                                + "  ·  " + pick.year
+        root.currentTitle = pick.title
+        root.currentUrl   = pick.url
+        root.currentMeta  = "u/" + pick.author + "  ·  " + pick.subreddit + "  ·  " + pick.year
     }
 
     function nextPost() {
         if (root.isAnimating || root.posts.length === 0) return
         root.isAnimating = true
-        transition.start()
+        root.triggerNext()   // caught by Connections inside fullRepresentation
     }
 
     // ── Timers ─────────────────────────────────────────────────────────────
@@ -141,13 +129,18 @@ PlasmoidItem {
         implicitWidth:  520
         implicitHeight: 230
 
+        // Receive the signal and run the animation — transition is in scope here
+        Connections {
+            target: root
+            function onTriggerNext() { transition.start() }
+        }
+
         Item {
             id: contentArea
             anchors.fill:    parent
             anchors.margins: 28
             opacity:         1.0
 
-            // Decorative opening quote — ghosted, top-left
             Text {
                 anchors.top:        parent.top
                 anchors.left:       parent.left
@@ -162,7 +155,6 @@ PlasmoidItem {
                 styleColor:         "#99000000"
             }
 
-            // ── Main thought ───────────────────────────────────────────────
             Text {
                 id: mainText
                 anchors {
@@ -173,9 +165,7 @@ PlasmoidItem {
                     topMargin:    6
                     bottomMargin: 14
                 }
-                text:              root.currentTitle.length > 0
-                                       ? root.currentTitle
-                                       : "Fetching thoughts…"
+                text:              root.currentTitle.length > 0 ? root.currentTitle : "Fetching thoughts…"
                 wrapMode:          Text.WordWrap
                 font.family:       "Noto Serif, Georgia, serif"
                 font.pixelSize:    Plasmoid.configuration.fontSize || 20
@@ -189,7 +179,6 @@ PlasmoidItem {
                 minimumPixelSize:  11
             }
 
-            // ── Author · Subreddit · Year ──────────────────────────────────
             Row {
                 id:      metaRow
                 anchors.bottom: parent.bottom
@@ -210,14 +199,12 @@ PlasmoidItem {
                     text:           root.currentMeta
                     font.family:    "Noto Sans, sans-serif"
                     font.pixelSize: 11
-
                     color:          "#ffffff"
                     opacity:        0.45
                     style:          Text.Raised
                     styleColor:     "#88000000"
                 }
             }
-
         }
 
         SequentialAnimation {
