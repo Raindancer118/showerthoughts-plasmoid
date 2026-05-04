@@ -118,7 +118,7 @@ PlasmoidItem {
     function nextPost() {
         if (root.isAnimating || root.posts.length === 0) return
         root.isAnimating = true
-        fadeOut.start()
+        transition.start()
     }
 
     // ── Timers ─────────────────────────────────────────────────────────────
@@ -218,29 +218,26 @@ PlasmoidItem {
                 }
             }
 
-            // ── Transitions ────────────────────────────────────────────────
-            NumberAnimation {
-                id:       fadeOut
-                target:   contentArea
-                property: "opacity"
-                from:     1.0; to: 0.0
-                duration: 380
-                easing.type: Easing.InOutQuad
-                onStopped: {
-                    root.advance()
-                    fadeIn.start()
-                }
-            }
+        }
 
+        SequentialAnimation {
+            id: transition
             NumberAnimation {
-                id:       fadeIn
-                target:   contentArea
-                property: "opacity"
-                from:     0.0; to: 1.0
-                duration: 380
+                target:      contentArea
+                property:    "opacity"
+                to:          0.0
+                duration:    350
                 easing.type: Easing.InOutQuad
-                onStopped: { root.isAnimating = false }
             }
+            ScriptAction  { script: root.advance() }
+            NumberAnimation {
+                target:      contentArea
+                property:    "opacity"
+                to:          1.0
+                duration:    350
+                easing.type: Easing.InOutQuad
+            }
+            onStopped: root.isAnimating = false
         }
 
         MouseArea {
