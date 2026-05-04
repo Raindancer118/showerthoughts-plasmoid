@@ -16,10 +16,10 @@ PlasmoidItem {
     property string currentTitle: ""
     property string currentMeta:  ""
     property string currentUrl:   ""
+    property string currentImage: ""   // empty = text post
     property bool   isAnimating:  false
     property double lastFetchMore: 0
 
-    // Signal that crosses the fullRepresentation component boundary
     signal triggerNext()
 
     // ── Config helpers ─────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ PlasmoidItem {
                 return
             }
             try {
-                var listing  = JSON.parse(xhr.responseText).data
+                var listing = JSON.parse(xhr.responseText).data
                 root.cursors[sub] = listing.after || null
 
                 var newPosts = listing.children
@@ -70,18 +70,26 @@ PlasmoidItem {
                         return !c.data.stickied && c.data.title && c.data.title.length > 15
                     })
                     .map(function(c) {
+                        var d        = c.data
+                        var imageUrl = ""
+                        if (d.post_hint === "image" && d.url) {
+                            imageUrl = d.url
+                        } else if (d.preview && d.preview.images && d.preview.images.length > 0) {
+                            // Reddit encodes preview URLs with &amp; — decode them
+                            imageUrl = d.preview.images[0].source.url.replace(/&amp;/g, "&")
+                        }
                         return {
-                            id:        c.data.id,
-                            title:     c.data.title,
-                            author:    c.data.author,
-                            subreddit: c.data.subreddit_name_prefixed || ("r/" + sub),
-                            year:      new Date(c.data.created_utc * 1000).getFullYear(),
-                            url:       "https://www.reddit.com/r/" + sub + "/comments/" + c.data.id + "/"
+                            id:        d.id,
+                            title:     d.title,
+                            author:    d.author,
+                            subreddit: d.subreddit_name_prefixed || ("r/" + sub),
+                            year:      new Date(d.created_utc * 1000).getFullYear(),
+                            url:       "https://www.reddit.com/r/" + sub + "/comments/" + d.id + "/",
+                            image:     imageUrl
                         }
                     })
 
                 root.posts = root.posts.concat(newPosts)
-
                 if (root.currentTitle === "" && root.posts.length > 0) root.advance()
             } catch(e) {
                 console.log("ShowerthoughtsWidget: Parse error for r/" + sub + ": " + e)
@@ -96,17 +104,18 @@ PlasmoidItem {
         if (pool.length < 15) root.fetchMore()
         if (pool.length === 0) { root.seenIds = {}; pool = root.posts }
 
-        var pick          = pool[Math.floor(Math.random() * pool.length)]
+        var pick = pool[Math.floor(Math.random() * pool.length)]
         root.seenIds[pick.id] = true
         root.currentTitle = pick.title
         root.currentUrl   = pick.url
+        root.currentImage = pick.image || ""
         root.currentMeta  = "u/" + pick.author + "  ·  " + pick.subreddit + "  ·  " + pick.year
     }
 
     function nextPost() {
         if (root.isAnimating || root.posts.length === 0) return
         root.isAnimating = true
-        root.triggerNext()   // caught by Connections inside fullRepresentation
+        root.triggerNext()
     }
 
     // ── Timers ─────────────────────────────────────────────────────────────
@@ -129,80 +138,155 @@ PlasmoidItem {
         implicitWidth:  520
         implicitHeight: 230
 
-        // Receive the signal and run the animation — transition is in scope here
         Connections {
             target: root
             function onTriggerNext() { transition.start() }
         }
 
+        // contentArea is the fade target — contains both views
         Item {
             id: contentArea
-            anchors.fill:    parent
-            anchors.margins: 28
-            opacity:         1.0
+            anchors.fill: parent
+            opacity: 1.0
 
-            Text {
-                anchors.top:        parent.top
-                anchors.left:       parent.left
-                anchors.topMargin:  -20
-                anchors.leftMargin: -6
-                text:               "“"
-                font.family:        Plasmoid.configuration.fontFamily || "Noto Serif"
-                font.pixelSize:     88
-                color:              "#ffffff"
-                opacity:            0.15
-                style:              Text.Raised
-                styleColor:         "#99000000"
-            }
+            // ── Text view (transparent, no image) ─────────────────────────
+            Item {
+                anchors.fill:    parent
+                anchors.margins: 28
+                visible:         root.currentImage === ""
 
-            Text {
-                id: mainText
-                anchors {
-                    top:          parent.top
-                    left:         parent.left
-                    right:        parent.right
-                    bottom:       metaRow.top
-                    topMargin:    6
-                    bottomMargin: 14
-                }
-                text:              root.currentTitle.length > 0 ? root.currentTitle : "Fetching thoughts…"
-                wrapMode:          Text.WordWrap
-                font.family:       Plasmoid.configuration.fontFamily || "Noto Serif"
-                font.pixelSize:    Plasmoid.configuration.fontSize || 20
-                font.italic:       true
-                lineHeight:        1.4
-                color:             "#ffffff"
-                verticalAlignment: Text.AlignVCenter
-                style:             Text.Raised
-                styleColor:        "#cc000000"
-                fontSizeMode:      Text.Fit
-                minimumPixelSize:  11
-            }
-
-            Row {
-                id:      metaRow
-                anchors.bottom: parent.bottom
-                anchors.left:   parent.left
-                spacing: 10
-                visible: Plasmoid.configuration.showMeta && root.currentMeta !== ""
-
-                Rectangle {
-                    width:   28
-                    height:  1
-                    color:   "#ffffff"
-                    opacity: 0.30
-                    anchors.verticalCenter: metaLabel.verticalCenter
+                Text {
+                    anchors.top:        parent.top
+                    anchors.left:       parent.left
+                    anchors.topMargin:  -20
+                    anchors.leftMargin: -6
+                    text:               """
+                    font.family:        Plasmoid.configuration.fontFamily || "Noto Serif"
+                    font.pixelSize:     88
+                    color:              "#ffffff"
+                    opacity:            0.15
+                    style:              Text.Raised
+                    styleColor:         "#99000000"
                 }
 
                 Text {
-                    id:             metaLabel
-                    text:           root.currentMeta
-                    font.family:    "Noto Sans, sans-serif"
-                    font.pixelSize: 11
-                    color:          "#ffffff"
-                    opacity:        0.45
-                    style:          Text.Raised
-                    styleColor:     "#88000000"
+                    id: mainText
+                    anchors {
+                        top:          parent.top
+                        left:         parent.left
+                        right:        parent.right
+                        bottom:       metaRow.top
+                        topMargin:    6
+                        bottomMargin: 14
+                    }
+                    text:              root.currentTitle.length > 0 ? root.currentTitle : "Fetching thoughts…"
+                    wrapMode:          Text.WordWrap
+                    font.family:       Plasmoid.configuration.fontFamily || "Noto Serif"
+                    font.pixelSize:    Plasmoid.configuration.fontSize || 20
+                    font.italic:       true
+                    lineHeight:        1.4
+                    color:             "#ffffff"
+                    verticalAlignment: Text.AlignVCenter
+                    style:             Text.Raised
+                    styleColor:        "#cc000000"
+                    fontSizeMode:      Text.Fit
+                    minimumPixelSize:  11
+                }
+
+                Row {
+                    id:      metaRow
+                    anchors.bottom: parent.bottom
+                    anchors.left:   parent.left
+                    spacing: 10
+                    visible: Plasmoid.configuration.showMeta && root.currentMeta !== ""
+
+                    Rectangle {
+                        width:   28; height: 1
+                        color:   "#ffffff"; opacity: 0.30
+                        anchors.verticalCenter: metaLabel.verticalCenter
+                    }
+                    Text {
+                        id:             metaLabel
+                        text:           root.currentMeta
+                        font.family:    "Noto Sans, sans-serif"
+                        font.pixelSize: 11
+                        color:          "#ffffff"; opacity: 0.45
+                        style:          Text.Raised
+                        styleColor:     "#88000000"
+                    }
+                }
+            }
+
+            // ── Image view ────────────────────────────────────────────────
+            Item {
+                anchors.fill: parent
+                visible:      root.currentImage !== ""
+
+                Image {
+                    id:           postImage
+                    anchors.fill: parent
+                    anchors.bottomMargin: Plasmoid.configuration.showMeta ? 28 : 8
+                    source:       root.currentImage
+                    fillMode:     Image.PreserveAspectFit
+                    asynchronous: true
+                    smooth:       true
+                    // If the image fails to load, fall back to text view
+                    onStatusChanged: if (status === Image.Error) root.currentImage = ""
+                }
+
+                // Gradient at bottom of image for title legibility
+                Rectangle {
+                    anchors.left:         postImage.left
+                    anchors.right:        postImage.right
+                    anchors.bottom:       postImage.bottom
+                    height:               Math.min(postImage.height * 0.45, 120)
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 1.0; color: "#c0000000" }
+                    }
+                }
+
+                // Title over image
+                Text {
+                    anchors.left:         postImage.left
+                    anchors.right:        postImage.right
+                    anchors.bottom:       postImage.bottom
+                    anchors.margins:      14
+                    text:                 root.currentTitle
+                    wrapMode:             Text.WordWrap
+                    font.family:          Plasmoid.configuration.fontFamily || "Noto Serif"
+                    font.pixelSize:       Plasmoid.configuration.fontSize || 18
+                    font.italic:          true
+                    lineHeight:           1.3
+                    color:                "#ffffff"
+                    style:                Text.Raised
+                    styleColor:           "#cc000000"
+                    fontSizeMode:         Text.Fit
+                    minimumPixelSize:     10
+                }
+
+                // Meta below image
+                Row {
+                    anchors.bottom: parent.bottom
+                    anchors.left:   parent.left
+                    anchors.leftMargin: 8
+                    spacing: 10
+                    visible: Plasmoid.configuration.showMeta && root.currentMeta !== ""
+
+                    Rectangle {
+                        width:   20; height: 1
+                        color:   "#ffffff"; opacity: 0.30
+                        anchors.verticalCenter: imgMetaLabel.verticalCenter
+                    }
+                    Text {
+                        id:             imgMetaLabel
+                        text:           root.currentMeta
+                        font.family:    "Noto Sans, sans-serif"
+                        font.pixelSize: 11
+                        color:          "#ffffff"; opacity: 0.45
+                        style:          Text.Raised
+                        styleColor:     "#88000000"
+                    }
                 }
             }
         }
@@ -210,19 +294,13 @@ PlasmoidItem {
         SequentialAnimation {
             id: transition
             NumberAnimation {
-                target:      contentArea
-                property:    "opacity"
-                to:          0.0
-                duration:    350
-                easing.type: Easing.InOutQuad
+                target: contentArea; property: "opacity"
+                to: 0.0; duration: 350; easing.type: Easing.InOutQuad
             }
-            ScriptAction  { script: root.advance() }
+            ScriptAction { script: root.advance() }
             NumberAnimation {
-                target:      contentArea
-                property:    "opacity"
-                to:          1.0
-                duration:    350
-                easing.type: Easing.InOutQuad
+                target: contentArea; property: "opacity"
+                to: 1.0; duration: 350; easing.type: Easing.InOutQuad
             }
             onStopped: root.isAnimating = false
         }
@@ -230,13 +308,11 @@ PlasmoidItem {
         MouseArea {
             anchors.fill: parent
             cursorShape:  Qt.PointingHandCursor
-
             onClicked:       clickTimer.restart()
             onDoubleClicked: { clickTimer.stop(); if (root.currentUrl !== "") Qt.openUrlExternally(root.currentUrl) }
 
             Timer {
-                id:       clickTimer
-                interval: 220
+                id: clickTimer; interval: 220
                 onTriggered: root.nextPost()
             }
         }
