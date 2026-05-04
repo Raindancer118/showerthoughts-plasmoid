@@ -160,7 +160,7 @@ PlasmoidItem {
                     anchors.left:       parent.left
                     anchors.topMargin:  -20
                     anchors.leftMargin: -6
-                    text:               """
+                    text:               "\u201C"
                     font.family:        Plasmoid.configuration.fontFamily || "Noto Serif"
                     font.pixelSize:     88
                     color:              "#ffffff"
