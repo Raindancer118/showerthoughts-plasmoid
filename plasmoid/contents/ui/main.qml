@@ -207,7 +207,7 @@ PlasmoidItem {
                     text:           root.currentMeta
                     font.family:    "Noto Sans, sans-serif"
                     font.pixelSize: 11
-                    font.letterSpacing: 0.6
+
                     color:          "#ffffff"
                     opacity:        0.45
                     style:          Text.Raised
