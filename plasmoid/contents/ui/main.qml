@@ -228,10 +228,17 @@ PlasmoidItem {
         }
 
         MouseArea {
-            anchors.fill:    parent
-            cursorShape:     Qt.PointingHandCursor
-            onClicked:       root.nextPost()
-            onDoubleClicked: if (root.currentUrl !== "") Qt.openUrlExternally(root.currentUrl)
+            anchors.fill: parent
+            cursorShape:  Qt.PointingHandCursor
+
+            onClicked:       clickTimer.restart()
+            onDoubleClicked: { clickTimer.stop(); if (root.currentUrl !== "") Qt.openUrlExternally(root.currentUrl) }
+
+            Timer {
+                id:       clickTimer
+                interval: 220
+                onTriggered: root.nextPost()
+            }
         }
     }
 }
