@@ -15,6 +15,7 @@ PlasmoidItem {
     property var    cursors:      ({})  // {subreddit: afterCursor} for pagination
     property string currentTitle: ""
     property string currentMeta:  ""
+    property string currentUrl:   ""
     property bool   isAnimating:  false
     property double lastFetchMore: 0   // throttle background pagination
 
@@ -75,7 +76,8 @@ PlasmoidItem {
                             title:     c.data.title,
                             author:    c.data.author,
                             subreddit: c.data.subreddit_name_prefixed || ("r/" + sub),
-                            year:      new Date(c.data.created_utc * 1000).getFullYear()
+                            year:      new Date(c.data.created_utc * 1000).getFullYear(),
+                            url:       "https://www.reddit.com/r/" + sub + "/comments/" + c.data.id + "/"
                         }
                     })
 
@@ -107,6 +109,7 @@ PlasmoidItem {
         var pick = pool[Math.floor(Math.random() * pool.length)]
         root.seenIds[pick.id] = true
         root.currentTitle     = pick.title
+        root.currentUrl       = pick.url
         root.currentMeta      = "u/" + pick.author
                                 + "  ·  " + pick.subreddit
                                 + "  ·  " + pick.year
@@ -241,9 +244,11 @@ PlasmoidItem {
         }
 
         MouseArea {
-            anchors.fill: parent
-            cursorShape:  Qt.PointingHandCursor
-            onClicked:    root.nextPost()
+            anchors.fill:      parent
+            cursorShape:       Qt.PointingHandCursor
+            acceptedButtons:   Qt.LeftButton | Qt.MiddleButton
+            onDoubleClicked:   if (mouse.button === Qt.LeftButton && root.currentUrl !== "") Qt.openUrlExternally(root.currentUrl)
+            onClicked:         if (mouse.button === Qt.MiddleButton) root.nextPost()
         }
     }
 }
