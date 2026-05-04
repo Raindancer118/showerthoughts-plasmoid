@@ -246,31 +246,8 @@ PlasmoidItem {
         MouseArea {
             anchors.fill:    parent
             cursorShape:     Qt.PointingHandCursor
-            acceptedButtons: Qt.LeftButton
-
-            property bool pendingClick: false
-
-            onClicked: {
-                pendingClick = true
-                clickTimer.restart()
-            }
-
-            onDoubleClicked: {
-                pendingClick = false
-                clickTimer.stop()
-                if (root.currentUrl !== "") Qt.openUrlExternally(root.currentUrl)
-            }
-
-            Timer {
-                id: clickTimer
-                interval: 220
-                onTriggered: {
-                    if (parent.pendingClick) {
-                        parent.pendingClick = false
-                        root.nextPost()
-                    }
-                }
-            }
+            onClicked:       root.nextPost()
+            onDoubleClicked: if (root.currentUrl !== "") Qt.openUrlExternally(root.currentUrl)
         }
     }
 }
