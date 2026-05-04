@@ -147,7 +147,7 @@ PlasmoidItem {
                 anchors.topMargin:  -20
                 anchors.leftMargin: -6
                 text:               "“"
-                font.family:        "Noto Serif, Georgia, serif"
+                font.family:        Plasmoid.configuration.fontFamily || "Noto Serif"
                 font.pixelSize:     88
                 color:              "#ffffff"
                 opacity:            0.15
@@ -167,7 +167,7 @@ PlasmoidItem {
                 }
                 text:              root.currentTitle.length > 0 ? root.currentTitle : "Fetching thoughts…"
                 wrapMode:          Text.WordWrap
-                font.family:       "Noto Serif, Georgia, serif"
+                font.family:       Plasmoid.configuration.fontFamily || "Noto Serif"
                 font.pixelSize:    Plasmoid.configuration.fontSize || 20
                 font.italic:       true
                 lineHeight:        1.4

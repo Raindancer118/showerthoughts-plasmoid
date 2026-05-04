@@ -8,6 +8,7 @@ Item {
     property alias cfg_refreshInterval:  intervalSpinBox.value
     property alias cfg_fontSize:         fontSizeSpinBox.value
     property alias cfg_showMeta:         showMetaCheck.checked
+    property alias cfg_fontFamily:       fontFamilyField.text
 
     Kirigami.FormLayout {
         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -37,6 +38,12 @@ Item {
             id: showMetaCheck
             Kirigami.FormData.label: i18n("Show author & subreddit:")
             text: ""
+        }
+
+        QQC2.TextField {
+            id: fontFamilyField
+            Kirigami.FormData.label: i18n("Font family:")
+            placeholderText: "Noto Serif"
         }
     }
 }
