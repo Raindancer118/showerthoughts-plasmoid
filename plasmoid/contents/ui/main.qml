@@ -9,14 +9,16 @@ PlasmoidItem {
     preferredRepresentation: fullRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
-    // ── State ─────────────────────────────────────────────────────────────
-    property var    posts:        []
-    property int    currentIndex: -1
+    // ── State ──────────────────────────────────────────────────────────────
+    property var    posts:        []    // all fetched posts
+    property var    seenIds:      ({})  // {id: true} — never repeat within session
+    property var    cursors:      ({})  // {subreddit: afterCursor} for pagination
     property string currentTitle: ""
     property string currentMeta:  ""
     property bool   isAnimating:  false
+    property double lastFetchMore: 0   // throttle background pagination
 
-    // ── Config helpers ────────────────────────────────────────────────────
+    // ── Config helpers ─────────────────────────────────────────────────────
     property var subredditList: {
         var raw = Plasmoid.configuration.subreddits || "showerthoughts"
         return raw.split(",")
@@ -24,16 +26,30 @@ PlasmoidItem {
             .filter(function(s) { return s.length > 0 })
     }
 
-    // ── Fetching ──────────────────────────────────────────────────────────
+    // ── Fetching ───────────────────────────────────────────────────────────
     function fetchAllPosts() {
-        root.posts        = []
-        root.currentIndex = -1
-        subredditList.forEach(fetchSubreddit)
+        root.posts    = []
+        root.seenIds  = {}
+        root.cursors  = {}
+        root.lastFetchMore = 0
+        subredditList.forEach(function(sub) { fetchSubreddit(sub, null) })
     }
 
-    function fetchSubreddit(sub) {
+    function fetchMore() {
+        var now = Date.now()
+        if (now - root.lastFetchMore < 60000) return  // once per minute max
+        root.lastFetchMore = now
+        subredditList.forEach(function(sub) {
+            if (root.cursors[sub]) fetchSubreddit(sub, root.cursors[sub])
+        })
+    }
+
+    function fetchSubreddit(sub, after) {
+        var url = "https://www.reddit.com/r/" + sub + "/top.json?limit=100&t=all"
+        if (after) url += "&after=" + encodeURIComponent(after)
+
         var xhr = new XMLHttpRequest()
-        xhr.open("GET", "https://www.reddit.com/r/" + sub + "/top.json?limit=50&t=week", true)
+        xhr.open("GET", url, true)
         xhr.setRequestHeader("User-Agent", "Plasma/ShowerthoughtsWidget 1.0")
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
@@ -42,32 +58,31 @@ PlasmoidItem {
                 return
             }
             try {
-                var data     = JSON.parse(xhr.responseText)
-                var newPosts = data.data.children
+                var listing = JSON.parse(xhr.responseText).data
+
+                // Save pagination cursor for next call
+                root.cursors[sub] = listing.after || null
+
+                var newPosts = listing.children
                     .filter(function(c) {
-                        return !c.data.stickied && c.data.title && c.data.title.length > 15
+                        return !c.data.stickied
+                            && c.data.title
+                            && c.data.title.length > 15
                     })
                     .map(function(c) {
                         return {
+                            id:        c.data.id,
                             title:     c.data.title,
                             author:    c.data.author,
-                            subreddit: c.data.subreddit_name_prefixed || ("r/" + sub)
+                            subreddit: c.data.subreddit_name_prefixed || ("r/" + sub),
+                            year:      new Date(c.data.created_utc * 1000).getFullYear()
                         }
                     })
 
-                var combined = root.posts.concat(newPosts)
-                // Fisher-Yates shuffle so posts from multiple subreddits mix evenly
-                for (var i = combined.length - 1; i > 0; i--) {
-                    var j    = Math.floor(Math.random() * (i + 1))
-                    var tmp  = combined[i]
-                    combined[i] = combined[j]
-                    combined[j] = tmp
-                }
-                root.posts = combined
+                root.posts = root.posts.concat(newPosts)
 
-                if (root.currentIndex === -1 && root.posts.length > 0) {
-                    root.currentIndex = 0
-                    root.showCurrent()
+                if (root.currentTitle === "" && root.posts.length > 0) {
+                    root.advance()
                 }
             } catch(e) {
                 console.log("ShowerthoughtsWidget: Parse error for r/" + sub + ": " + e)
@@ -76,32 +91,39 @@ PlasmoidItem {
         xhr.send()
     }
 
-    function showCurrent() {
-        if (currentIndex < 0 || currentIndex >= posts.length) return
-        var p        = posts[currentIndex]
-        currentTitle = p.title
-        currentMeta  = "u/" + p.author + "  ·  " + p.subreddit
+    // ── Navigation ─────────────────────────────────────────────────────────
+    function advance() {
+        var pool = root.posts.filter(function(p) { return !root.seenIds[p.id] })
+
+        // Running low — quietly fetch the next page in the background
+        if (pool.length < 15) root.fetchMore()
+
+        // Fully exhausted — reset seen set and start over
+        if (pool.length === 0) {
+            root.seenIds = {}
+            pool = root.posts
+        }
+
+        var pick = pool[Math.floor(Math.random() * pool.length)]
+        root.seenIds[pick.id] = true
+        root.currentTitle     = pick.title
+        root.currentMeta      = "u/" + pick.author
+                                + "  ·  " + pick.subreddit
+                                + "  ·  " + pick.year
     }
 
     function nextPost() {
-        if (posts.length === 0 || isAnimating) return
-        isAnimating = true
+        if (root.isAnimating || root.posts.length === 0) return
+        root.isAnimating = true
         fadeOut.start()
     }
 
-    // ── Timers ────────────────────────────────────────────────────────────
+    // ── Timers ─────────────────────────────────────────────────────────────
     Timer {
         interval: (Plasmoid.configuration.refreshInterval || 300) * 1000
-        running:  root.posts.length > 0
+        running:  root.currentTitle !== ""
         repeat:   true
         onTriggered: root.nextPost()
-    }
-
-    Timer {
-        interval: 3600000   // re-fetch from Reddit every hour
-        running:  true
-        repeat:   true
-        onTriggered: root.fetchAllPosts()
     }
 
     Connections {
@@ -111,7 +133,7 @@ PlasmoidItem {
 
     Component.onCompleted: fetchAllPosts()
 
-    // ── UI ────────────────────────────────────────────────────────────────
+    // ── UI ─────────────────────────────────────────────────────────────────
     fullRepresentation: Item {
         implicitWidth:  520
         implicitHeight: 230
@@ -122,7 +144,7 @@ PlasmoidItem {
             anchors.margins: 28
             opacity:         1.0
 
-            // Decorative opening guillemet — large, ghosted
+            // Decorative opening quote — ghosted, top-left
             Text {
                 anchors.top:        parent.top
                 anchors.left:       parent.left
@@ -137,7 +159,7 @@ PlasmoidItem {
                 styleColor:         "#99000000"
             }
 
-            // ── Main thought ──────────────────────────────────────────────
+            // ── Main thought ───────────────────────────────────────────────
             Text {
                 id: mainText
                 anchors {
@@ -150,7 +172,7 @@ PlasmoidItem {
                 }
                 text:              root.currentTitle.length > 0
                                        ? root.currentTitle
-                                       : (root.posts.length === 0 ? "Fetching thoughts…" : "")
+                                       : "Fetching thoughts…"
                 wrapMode:          Text.WordWrap
                 font.family:       "Noto Serif, Georgia, serif"
                 font.pixelSize:    Plasmoid.configuration.fontSize || 20
@@ -164,7 +186,7 @@ PlasmoidItem {
                 minimumPixelSize:  11
             }
 
-            // ── Author / subreddit ────────────────────────────────────────
+            // ── Author · Subreddit · Year ──────────────────────────────────
             Row {
                 id:      metaRow
                 anchors.bottom: parent.bottom
@@ -181,19 +203,19 @@ PlasmoidItem {
                 }
 
                 Text {
-                    id:              metaLabel
-                    text:            root.currentMeta
-                    font.family:     "Noto Sans, sans-serif"
-                    font.pixelSize:  11
-                    letterSpacing:   0.6
-                    color:           "#ffffff"
-                    opacity:         0.45
-                    style:           Text.Raised
-                    styleColor:      "#88000000"
+                    id:             metaLabel
+                    text:           root.currentMeta
+                    font.family:    "Noto Sans, sans-serif"
+                    font.pixelSize: 11
+                    letterSpacing:  0.6
+                    color:          "#ffffff"
+                    opacity:        0.45
+                    style:          Text.Raised
+                    styleColor:     "#88000000"
                 }
             }
 
-            // ── Transitions ───────────────────────────────────────────────
+            // ── Transitions ────────────────────────────────────────────────
             NumberAnimation {
                 id:       fadeOut
                 target:   contentArea
@@ -202,8 +224,7 @@ PlasmoidItem {
                 duration: 380
                 easing.type: Easing.InOutQuad
                 onStopped: {
-                    root.currentIndex = (root.currentIndex + 1) % Math.max(1, root.posts.length)
-                    root.showCurrent()
+                    root.advance()
                     fadeIn.start()
                 }
             }
@@ -219,7 +240,6 @@ PlasmoidItem {
             }
         }
 
-        // Click anywhere to advance
         MouseArea {
             anchors.fill: parent
             cursorShape:  Qt.PointingHandCursor
