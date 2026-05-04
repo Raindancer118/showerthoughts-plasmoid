@@ -9,6 +9,7 @@ Item {
     property alias cfg_fontSize:         fontSizeSpinBox.value
     property alias cfg_showMeta:         showMetaCheck.checked
     property alias cfg_fontFamily:       fontFamilyField.text
+    property alias cfg_apiUrl:           apiUrlField.text
 
     Kirigami.FormLayout {
         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -44,6 +45,14 @@ Item {
             id: fontFamilyField
             Kirigami.FormData.label: i18n("Font family:")
             placeholderText: "Noto Serif"
+        }
+
+        Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: i18n("Custom API") }
+
+        QQC2.TextField {
+            id: apiUrlField
+            Kirigami.FormData.label: i18n("API base URL:")
+            placeholderText: "https://thoughts.volantic.de  (leave empty for Reddit)"
         }
     }
 }

@@ -19,5 +19,8 @@
         <entry name="fontFamily" type="String">
             <default>Noto Serif</default>
         </entry>
+        <entry name="apiUrl" type="String">
+            <default></default>
+        </entry>
     </group>
 </kcfg>

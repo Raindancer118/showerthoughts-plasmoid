@@ -31,21 +31,55 @@ PlasmoidItem {
     }
 
     // ── Fetching ───────────────────────────────────────────────────────────
+    property string apiUrl: Plasmoid.configuration.apiUrl || ""
+
     function fetchAllPosts() {
         root.posts         = []
         root.seenIds       = {}
         root.cursors       = {}
         root.lastFetchMore = 0
-        subredditList.forEach(function(sub) { fetchSubreddit(sub, null) })
+        if (root.apiUrl !== "")
+            fetchFromApi()
+        else
+            subredditList.forEach(function(sub) { fetchSubreddit(sub, null) })
+    }
+
+    function fetchFromApi() {
+        var xhr = new XMLHttpRequest()
+        xhr.open("GET", root.apiUrl + "/api/posts/random?count=200", true)
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState !== XMLHttpRequest.DONE || xhr.status !== 200) return
+            try {
+                var mapped = JSON.parse(xhr.responseText).map(function(p) {
+                    return {
+                        id:        p.id,
+                        title:     p.title,
+                        author:    p.author,
+                        subreddit: p.subreddit || "r/Showerthoughts",
+                        year:      new Date(p.created_utc * 1000).getFullYear(),
+                        url:       p.url,
+                        image:     ""
+                    }
+                })
+                root.posts = root.posts.concat(mapped)
+                if (root.currentTitle === "" && root.posts.length > 0) root.advance()
+            } catch(e) {
+                console.log("ShowerthoughtsWidget: API error: " + e)
+            }
+        }
+        xhr.send()
     }
 
     function fetchMore() {
         var now = Date.now()
         if (now - root.lastFetchMore < 60000) return
         root.lastFetchMore = now
-        subredditList.forEach(function(sub) {
-            if (root.cursors[sub]) fetchSubreddit(sub, root.cursors[sub])
-        })
+        if (root.apiUrl !== "")
+            fetchFromApi()
+        else
+            subredditList.forEach(function(sub) {
+                if (root.cursors[sub]) fetchSubreddit(sub, root.cursors[sub])
+            })
     }
 
     function fetchSubreddit(sub, after) {
